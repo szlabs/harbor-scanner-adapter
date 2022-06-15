@@ -1,0 +1,22 @@
+# API server configurations
+server:
+  protocol: "https" # HTTP (default) or HTTPS
+  host: "0.0.0.0" # Host for server to listen to. By default, "0.0.0.0" is used.
+  port: 8080 # Port for server to listen to. By default, 8080 is set.
+  cert: "config/localhost.crt" # Required when protocol is HTTPS.
+  key: "config/localhost.key" # Required when protocol is HTTPS.
+
+# Scanner configurations.
+scanner:
+  # Worker concurrency
+  workers: 5
+  redis:
+    # redis://user:pass@redis_host:port/db
+    # redis+sentinel://user:pass@redis_sentinel1:port1,redis_sentinel2:port2/monitor_name/db?idle_timeout_seconds=100
+    URL: "redis://10.202.250.199:6379/0"
+  backends:
+    cis:
+      timeout: 1m30s # e.g.: 5s, 5m
+      insecure: false
+      ignore: "" # Ignore the checkpoints, e.g: "CIS-DI-0001, DKL-DI-0006"
+      certPath: "" # Registry cert path
