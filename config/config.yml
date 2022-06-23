@@ -9,7 +9,7 @@ server:
 # Scanner configurations.
 scanner:
   # Worker concurrency
-  workers: 5
+  workers: 3
   redis:
     # redis://user:pass@redis_host:port/db
     # redis+sentinel://user:pass@redis_sentinel1:port1,redis_sentinel2:port2/monitor_name/db?idle_timeout_seconds=100
@@ -17,6 +17,6 @@ scanner:
   backends:
     cis:
       timeout: 1m30s # e.g.: 5s, 5m
-      insecure: false
+      insecure: true
       ignore: "" # Ignore the checkpoints, e.g: "CIS-DI-0001, DKL-DI-0006"
       certPath: "" # Registry cert path

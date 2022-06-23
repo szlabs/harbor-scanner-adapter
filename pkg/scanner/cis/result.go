@@ -17,9 +17,9 @@ package cis
 import (
 	"reflect"
 
-	"github.com/szlabs/goworker/pkg/errs"
 	"github.com/szlabs/harbor-scanner-adapter/pkg/scan"
-	cis2 "github.com/szlabs/harbor-scanner-adapter/pkg/scanner/cis"
+
+	"github.com/szlabs/goworker/pkg/errs"
 )
 
 // Result for CIS benchmarks.
@@ -31,7 +31,7 @@ type Result struct {
 // MimeType implements scan.Result.
 func (r *Result) MimeType() string {
 	// Fix type.
-	return cis2.ReportMimeType
+	return ReportMimeType
 }
 
 // JSON implements scan.Result.
@@ -56,7 +56,7 @@ func (r *Result) Write(content interface{}, options ...scan.ResultOption) error 
 
 	kind := reflect.TypeOf(content).Kind()
 	if kind != reflect.String {
-		return errorf.Error("invalid type of result content", "accepted", "string", "actual", kind)
+		return errorf.Error("invalid type of result content: %s=%v %s=%v", "accepted", "string", "actual", kind)
 	}
 
 	r.rawJSON = content.(string)

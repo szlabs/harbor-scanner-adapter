@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"sync"
 	"time"
 
@@ -25,10 +26,9 @@ import (
 	"github.com/szlabs/goworker/pkg/job"
 
 	"github.com/szlabs/harbor-scanner-adapter/pkg/auth"
+	"github.com/szlabs/harbor-scanner-adapter/pkg/client"
 	"github.com/szlabs/harbor-scanner-adapter/pkg/oci"
-	"github.com/szlabs/harbor-scanner-adapter/pkg/runner"
 	"github.com/szlabs/harbor-scanner-adapter/pkg/scan"
-	"github.com/szlabs/harbor-scanner-adapter/pkg/scan/cis"
 	"github.com/szlabs/harbor-scanner-adapter/pkg/store"
 	"github.com/szlabs/harbor-scanner-adapter/pkg/store/data"
 	"github.com/szlabs/harbor-scanner-adapter/pkg/store/rds"
@@ -40,7 +40,12 @@ import (
 const (
 	// ParamKeyImage is parameter key of image path.
 	ParamKeyImage = "image"
-	cisProvider   = "cis-provider"
+	// ParamReqID is parameter key of request ID.
+	ParamReqID = "reqID"
+	// ParamArtifact is the artifact reference.
+	ParamArtifact = "artifact"
+
+	dataPrefix = "{cis-result-store}"
 )
 
 // Use singleton provider.
@@ -49,14 +54,18 @@ var once sync.Once
 
 // Provider to support CIS scan.
 type Provider struct {
-	store store.Provider
+	store  store.Provider
+	name   string
+	dataNS string
 }
 
 // New a CIS provider.
 func New() *Provider {
 	once.Do(func() {
 		provider = &Provider{
-			store: store.Default(),
+			store:  store.Default(),
+			name:   Name,
+			dataNS: dataPrefix,
 		}
 	})
 
@@ -87,8 +96,19 @@ func (p *Provider) Metadata() *spec.ScannerAdapterMetadata {
 }
 
 // AcceptScanRequest implements scanner.Provider.
-func (p *Provider) AcceptScanRequest(_ context.Context, req *spec.ScanRequest) (*spec.ScanResponse, error) {
+func (p *Provider) AcceptScanRequest(ctx context.Context, req *spec.ScanRequest) (*spec.ScanResponse, error) {
 	errorf := errs.WithPrefix("accept scan request error")
+
+	// Extract request ID first.
+	reqID := uuid.FromContext(ctx)
+	if reqID == "" {
+		return nil, errorf.Error("missing request ID in the context")
+	}
+
+	// Validate image mimetype.
+	if req.Artifact.MimeType != oci.OCIImage && req.Artifact.MimeType != oci.DockerV2Image {
+		return nil, errorf.Error("only support mimetypes: %s,%s", oci.OCIImage, oci.DockerV2Image)
+	}
 
 	// Convert job parameters.
 	jp, err := toJobParams(req)
@@ -96,30 +116,32 @@ func (p *Provider) AcceptScanRequest(_ context.Context, req *spec.ScanRequest) (
 		return nil, errorf.Wrap("parse job parameters error", err)
 	}
 
-	if err := p.store.Unique(cisProvider, jp[ParamKeyImage].(string)); err != nil {
-		return nil, errorf.Wrap("last scan is still not finished yet", err)
-	}
-
-	// Generate req uuid and append to job parameters.
-	reqID := uuid.Random()
-	jp["reqID"] = reqID
+	// Append request ID to job parameters.
+	jp[ParamReqID] = reqID
 
 	// Enqueue scan job.
-	enq, err := runner.Enqueuer()
+	enq, err := client.Enqueuer()
 	if err != nil {
 		return nil, errorf.Wrap("get job enqueuer error", err)
 	}
 
-	j, err := enq.EnqueueUnique(cis.Name, jp)
+	j, err := enq.EnqueueUnique(JobName, jp)
 	if err != nil {
 		return nil, errorf.Wrap("enqueue cis scan job error", err)
 	}
 
 	// Log the backend job info for potential debug.
-	zlog.Logger().Info("CIS backend scan job is enqueued", "job", *j)
+	zlog.Logger().Infow("CIS backend scan job is enqueued", "job", j.Name, "id", j.ID)
+
+	dk := &data.Key{
+		ReqID:    reqID,
+		Provider: p.name,
+		Mimetype: ReportMimeType,
+	}
+	dk.AppendPrefix(p.dataNS)
 
 	// Create result placeholder and set the status to pending.
-	if err := p.store.SaveResult(reqID, &data.Item{
+	if err := p.store.SaveResult(dk, &data.Item{
 		Timestamp: time.Now().UTC().Unix(),
 		Status:    data.Pending,
 	}); err != nil {
@@ -134,14 +156,21 @@ func (p *Provider) AcceptScanRequest(_ context.Context, req *spec.ScanRequest) (
 }
 
 // RetrieveScanResult implements scanner.Provider.
-func (p *Provider) RetrieveScanResult(_ context.Context, reqID string) (scan.Result, error) {
+func (p *Provider) RetrieveScanResult(_ context.Context, reqID string, mimetype string) (scan.Result, error) {
 	errorf := errs.WithPrefix("retrieve scan request error")
 
-	res := &cis.Result{}
+	dk := &data.Key{
+		Provider: p.name,
+		ReqID:    reqID,
+		Mimetype: mimetype,
+	}
+	dk.AppendPrefix(p.dataNS)
 
-	dt, err := p.store.GetResult(reqID)
+	res := &Result{}
+	dt, err := p.store.GetResult(dk)
 	if err != nil {
 		if errors.Is(err, rds.NotFoundErr) {
+			// Use res default phase which is not found.
 			return res, nil
 		}
 		return nil, errorf.Wrap("store get result error", err)
@@ -159,21 +188,23 @@ func (p *Provider) RetrieveScanResult(_ context.Context, reqID string) (scan.Res
 			scan.NextTry(0), // skip retry
 		)
 	default:
-		return nil, errorf.Error("unknown status", "status", dt.Status)
+		return nil, errorf.Error("unknown status: %s=%v", "status", dt.Status)
 	}
 }
 
 func toJobParams(req *spec.ScanRequest) (job.Parameters, error) {
+	errorf := errs.WithPrefix("")
+
 	// Parse authorization credential.
 	// NOTES: so far, only no authorization or basic authorization is supported.
 	ap, err := auth.Parse(req.Registry.Authorization)
 	if err != nil {
-		return nil, fmt.Errorf("parse registry authorization error: %w", err)
+		return nil, errorf.Wrap("parse registry authorization error", err)
 	}
 
 	jp := make(job.Parameters)
 	if err := ap.Inject(jp); err != nil {
-		return nil, fmt.Errorf("inject auth params error: %w", err)
+		return nil, errorf.Wrap("inject auth params error", err)
 	}
 
 	imgPath := fmt.Sprintf("%s/%s", req.Registry.Url, req.Artifact.Repository)
@@ -183,6 +214,13 @@ func toJobParams(req *spec.ScanRequest) (job.Parameters, error) {
 		imgPath = fmt.Sprintf("%s@%s", imgPath, req.Artifact.Digest)
 	}
 	jp[ParamKeyImage] = imgPath
+
+	/*bytes, err := json.Marshal(req.Artifact)
+	if err != nil {
+		return nil, errorf.Wrap("marshal artifact error", err)
+	}*/
+
+	jp[ParamArtifact] = req.Artifact
 
 	return jp, nil
 }

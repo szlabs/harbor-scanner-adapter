@@ -42,8 +42,6 @@ var NotFoundErr = fmt.Errorf("redis store: data item is not found")
 // Provider based on redis.
 type Provider struct {
 	pool *redis.Pool
-	// namespace of redis data.
-	ns string
 }
 
 // New a redis provider.
@@ -55,20 +53,18 @@ func New() *Provider {
 
 	return &Provider{
 		pool: pool,
-		ns:   "{cis-result-store}",
 	}
 }
 
 // Unique implements store.Provider.
-func (p *Provider) Unique(provider string, key string) error {
+func (p *Provider) Unique(key string) error {
 	errorf := errs.WithPrefix("store unique error")
 
 	conn := p.pool.Get()
 	defer rd.CloseConn(conn)
 
-	k := fmt.Sprintf("%s:%s:%s", p.ns, provider, key)
 	args := []interface{}{
-		k,
+		key,
 		uniqueV,
 		"EX",
 		exTime,
@@ -86,22 +82,20 @@ func (p *Provider) Unique(provider string, key string) error {
 
 	if r == uniqueV {
 		// Not unique.
-		return errorf.Error("conflicts", "provider", provider, "key", key)
+		return errorf.Error("conflicts: key=%s", key)
 	}
 
 	return nil
 }
 
 // DeUnique implements store.Provider.
-func (p *Provider) DeUnique(provider string, key string) error {
+func (p *Provider) DeUnique(key string) error {
 	errorf := errs.WithPrefix("")
 
 	conn := p.pool.Get()
 	defer rd.CloseConn(conn)
 
-	k := fmt.Sprintf("%s:%s:%s", p.ns, provider, key)
-
-	_, err := conn.Do("DEL", k)
+	_, err := conn.Do("DEL", key)
 	if err != nil {
 		return errorf.Wrap("clear unique key error", err)
 	}
@@ -110,8 +104,12 @@ func (p *Provider) DeUnique(provider string, key string) error {
 }
 
 // SaveResult implements store.Provider.
-func (p *Provider) SaveResult(reqID string, dt *data.Item) error {
+func (p *Provider) SaveResult(key *data.Key, dt *data.Item) error {
 	errorf := errs.WithPrefix("")
+
+	if err := key.Validate(); err != nil {
+		return errorf.Wrap("validate data key error ", err)
+	}
 
 	if err := dt.Validate(); err != nil {
 		return errorf.Wrap("validate data item error", err)
@@ -120,7 +118,8 @@ func (p *Provider) SaveResult(reqID string, dt *data.Item) error {
 	conn := p.pool.Get()
 	defer rd.CloseConn(conn)
 
-	k := fmt.Sprintf("%s:results:%s", p.ns, reqID)
+	k := key.String()
+
 	args := []interface{}{
 		k,
 		fieldT,
@@ -156,13 +155,18 @@ func (p *Provider) SaveResult(reqID string, dt *data.Item) error {
 }
 
 // GetResult implements store.Provider.
-func (p *Provider) GetResult(reqID string) (*data.Item, error) {
+func (p *Provider) GetResult(key *data.Key) (*data.Item, error) {
 	errorf := errs.WithPrefix("get scan result error")
+
+	if err := key.Validate(); err != nil {
+		return nil, errorf.Wrap("validate data key error ", err)
+	}
 
 	conn := p.pool.Get()
 	defer rd.CloseConn(conn)
 
-	k := fmt.Sprintf("%s:results:%s", p.ns, reqID)
+	k := key.String()
+
 	bytes, err := redis.ByteSlices(conn.Do("HGETALL", k))
 	if err != nil {
 		if errors.Is(err, redis.ErrNil) {
@@ -177,7 +181,7 @@ func (p *Provider) GetResult(reqID string) (*data.Item, error) {
 		field := string(bytes[i])
 		switch field {
 		case fieldS:
-			dt.Status = data.Status(string(bytes[i+1]))
+			dt.Status = data.Status(bytes[i+1])
 		case fieldD:
 			dt.JSON = string(bytes[i+1])
 		case fieldT:

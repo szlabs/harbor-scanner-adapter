@@ -9,6 +9,8 @@
  */
 package spec
 
-type ScanResponse struct {
-	Id string `json:"id"`
+type CISReportBody struct {
+	Summary map[string]uint `json:"summary,omitempty"`
+
+	Details []CISBenchmarkItem `json:"details,omitempty"`
 }

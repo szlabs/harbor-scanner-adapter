@@ -20,9 +20,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/szlabs/harbor-scanner-adapter/pkg/uuid"
+
+	"github.com/szlabs/harbor-scanner-adapter/server/spec"
+
+	"github.com/szlabs/harbor-scanner-adapter/pkg/scanner/cis"
+
 	"github.com/spf13/viper"
 
 	"github.com/szlabs/harbor-scanner-adapter/pkg/config"
+	"github.com/szlabs/harbor-scanner-adapter/pkg/runner"
 	"github.com/szlabs/harbor-scanner-adapter/pkg/zlog"
 	"github.com/szlabs/harbor-scanner-adapter/server/mux"
 )
@@ -79,6 +86,38 @@ func main() {
 			strings.ToLower(
 				viper.GetString("server.protocol")), listenAddr()))
 
+	rootCtx := context.Background()
+	// Start worker pool.
+	wp, err := runner.WorkerPool(rootCtx)
+	if err != nil {
+		zl.Fatal(err)
+	}
+	wp.Start()
+
+	go func() {
+		ctx, reqID := uuid.WithContext(rootCtx)
+		zl.Infow("generate uuid", "reqID", reqID)
+
+		// Sample
+		cisProvider := cis.New()
+		res, err := cisProvider.AcceptScanRequest(ctx, &spec.ScanRequest{
+			Registry: &spec.Registry{
+				Url:           "10.202.250.213",
+				Authorization: "Basic YWRtaW46SGFyYm9yMTIzNDUK",
+			},
+			Artifact: &spec.Artifact{
+				Repository: "library/redis",
+				Tag:        "latest",
+				MimeType:   "application/vnd.oci.image.manifest.v1+json",
+			},
+		})
+		if err != nil {
+			zl.Fatal(err)
+		}
+
+		zl.Infow("AcceptScanRequest", "result", res)
+	}()
+
 	c := make(chan os.Signal, 1)
 	// We'll accept graceful shutdowns when quit via SIGINT (Ctrl+C)
 	// SIGKILL, SIGQUIT or SIGTERM (Ctrl+/) will not be caught.
@@ -87,8 +126,11 @@ func main() {
 	// Block until we receive our signal.
 	<-c
 
+	// Stop worker pool now.
+	wp.Stop()
+
 	// Create a deadline to wait for.
-	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	ctx, cancel := context.WithTimeout(rootCtx, wait)
 	defer cancel()
 	// Doesn't block if no connections, but will otherwise wait
 	// until the timeout deadline.

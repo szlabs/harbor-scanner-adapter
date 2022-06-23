@@ -29,5 +29,5 @@ type Provider interface {
 	// AcceptScanRequest accepts a scan request and trigger some daemon jobs to do the scanning work.
 	AcceptScanRequest(ctx context.Context, req *spec.ScanRequest) (*spec.ScanResponse, error)
 	// RetrieveScanResult retrieves the scanning result associated with a specified provider ID.
-	RetrieveScanResult(ctx context.Context, reqID string) (scan.Result, error)
+	RetrieveScanResult(ctx context.Context, reqID string, mimetype string) (scan.Result, error)
 }

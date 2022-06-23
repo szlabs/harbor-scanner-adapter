@@ -17,17 +17,13 @@ package runner
 import (
 	"context"
 
+	"github.com/szlabs/harbor-scanner-adapter/pkg/scanner/cis"
+
+	"github.com/spf13/viper"
 	"github.com/szlabs/goworker/pkg/backend"
 	"github.com/szlabs/goworker/pkg/errs"
 	"github.com/szlabs/goworker/pkg/job"
 	"github.com/szlabs/harbor-scanner-adapter/pkg/rds"
-	"github.com/szlabs/harbor-scanner-adapter/pkg/scan/cis"
-
-	"github.com/spf13/viper"
-)
-
-const (
-	namespace = "{harbor-scanner-adapter}"
 )
 
 // buildKnownList builds internal known list of scanning jobs.
@@ -47,8 +43,8 @@ func buildKnownList() (*job.KnownList, error) {
 	return kl, nil
 }
 
-// StartWorkers starts workers to run scan jobs.
-func StartWorkers(ctx context.Context) (*backend.WorkerPool, error) {
+// WorkerPool inits a new worker pool to run jobs.
+func WorkerPool(ctx context.Context) (*backend.WorkerPool, error) {
 	errorf := errs.WithPrefix("start scan worker error")
 
 	rp, err := rds.RedisPool()
@@ -65,7 +61,7 @@ func StartWorkers(ctx context.Context) (*backend.WorkerPool, error) {
 		NewPoolBuilder().
 		WithContext(ctx).
 		UseRedisPool(rp).
-		WithNamespace(namespace).
+		WithNamespace(rds.Namespace).
 		AddKnownList(kl).
 		WithConcurrency(viper.GetUint("scanner.workers")).
 		Complete(), nil

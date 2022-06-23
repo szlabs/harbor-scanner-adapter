@@ -12,30 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cis
-
-import (
-	"context"
-
-	"github.com/szlabs/harbor-scanner-adapter/pkg/zlog"
-
-	"github.com/szlabs/goworker/pkg/job"
-)
+package rds
 
 const (
-	// Name of the CIS scan job.
-	Name        = "CIS_SCAN"
-	concurrency = 10
+	// Namespace for redis data of the workers.
+	Namespace = "{harbor-scanner-adapter}"
 )
-
-// AddToKnownList adds cis.Job to the known list.
-func AddToKnownList(l *job.KnownList) error {
-	return l.AddKnownJob(Name, job.RunnableFunc(Job), job.Concurrency(concurrency))
-}
-
-// Job for CIS scan.
-func Job(ctx context.Context, parameters job.Parameters) error {
-	// TODO: DeUnique
-	zlog.Logger().Info("cis.job is running")
-	return nil
-}

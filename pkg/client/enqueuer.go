@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package runner
+package client
 
 import (
 	"sync"
 
-	"github.com/szlabs/harbor-scanner-adapter/pkg/rds"
-
 	"github.com/szlabs/goworker/work"
+	"github.com/szlabs/harbor-scanner-adapter/pkg/rds"
 )
 
 var enqOnce sync.Once
@@ -33,7 +32,7 @@ func Enqueuer() (*work.Enqueuer, error) {
 	}
 
 	enqOnce.Do(func() {
-		enqueuer = work.NewEnqueuer(namespace, pool)
+		enqueuer = work.NewEnqueuer(rds.Namespace, pool)
 	})
 
 	return enqueuer, err

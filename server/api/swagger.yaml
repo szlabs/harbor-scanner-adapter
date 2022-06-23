@@ -562,10 +562,22 @@ components:
         scanner:
           $ref: '#/components/schemas/Scanner'
         benchmarks:
+          $ref: '#/components/schemas/CISReportBody'
+    CISReportBody:
+      type: object
+      properties:
+        summary:
+          type: object
+          additionalProperties: true
+        details:
           type: array
           items:
             $ref: '#/components/schemas/CISBenchmarkItem'
     CISBenchmarkItem:
+      required:
+      - benchmark
+      - code
+      - level
       type: object
       properties:
         code:
@@ -577,18 +589,22 @@ components:
           type: string
           description: The link uri for the details.
           format: uri
-          example: https://github.com/goodwithtech/cis/blob/master/CHECKPOINT.md#cis-di-0001
-        Benchmark:
+          example: https://github.com/goodwithtech/dockle/blob/master/CHECKPOINT.md#cis-di-0001
+        title:
           type: string
           description: The concrete description of the CIS benchmark.
           example: Create a user for the container.
-        Hint:
-          type: string
-          description: Detailed explanations for the benchmark item if appliable.
-          example: |
-            Create a non-root user for the container in the Dockerfile for the container image. It is a good practice to run the container as a non-root user, if possible.
-        Level:
+        level:
           $ref: '#/components/schemas/CISLevel'
+        alerts:
+          type: array
+          description: |
+            More details about the violation if applicable.
+          example:
+          - not found HEALTHCHECK statement
+          items:
+            type: string
+            format: uri
         vendor_attributes:
           type: object
           additionalProperties: true
@@ -596,18 +612,18 @@ components:
       type: string
       description: |
         Check level for CIS benchmarks.
-        * `FATAL` -  Be practical and prudent
-        * `WARN`- Be practical and prudent, but limited uses (even if official images)
-        * `INFO` - May negatively inhibit the utility or performance
-        * `SKIP` - Not found target files
-        * `PASS` - Not found any problems
-      example: FATAL
+        * `Fatal` -  Be practical and prudent
+        * `Warn`- Be practical and prudent, but limited uses (even if official images)
+        * `Info` - May negatively inhibit the utility or performance
+        * `Skip` - Not found target files
+        * `Pass` - Not found any problems
+      example: Fatal
       enum:
-      - FATAL
-      - WARN
-      - INFO
-      - SKIP
-      - PASS
+      - Fatal
+      - Warn
+      - Info
+      - Skip
+      - Pass
   securitySchemes:
     BasicAuth:
       type: http

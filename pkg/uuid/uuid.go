@@ -14,9 +14,38 @@
 
 package uuid
 
-import "github.com/google/uuid"
+import (
+	"context"
+
+	"github.com/google/uuid"
+)
+
+const (
+	// requestIDCtxKey is the key injected into the context.Context.
+	requestIDCtxKey ctxKeyType = "REQUEST_ID"
+)
+
+// ctxKeyType is the key type for the request ID.
+type ctxKeyType string
 
 // Random generates an uuid.
 func Random() string {
 	return uuid.Must(uuid.NewUUID()).String()
+}
+
+// WithContext injects request ID into the context.
+func WithContext(ctx context.Context) (context.Context, string) {
+	reqID := Random()
+	return context.WithValue(ctx, requestIDCtxKey, reqID), reqID
+}
+
+// FromContext extracts the request ID from the context.
+func FromContext(ctx context.Context) string {
+	if v := ctx.Value(requestIDCtxKey); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+
+	return ""
 }

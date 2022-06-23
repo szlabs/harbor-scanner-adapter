@@ -23,19 +23,23 @@ import (
 
 // Provider to provide data store capabilities.
 type Provider interface {
-	// Unique checks the uniqueness of scannerProvider:key.
+	// Unique checks the uniqueness of the key.
 	// If not exists, then add key to store and returns nil error. Otherwise, error is returned.
 	// A timeout should be added to the unique key in case deletion failures happen.
-	Unique(provider string, key string) error
+	Unique(key string) error
 	// DeUnique removes the unique key added in the store by Unique() method.
-	DeUnique(provider string, key string) error
+	DeUnique(key string) error
 	// SaveResult saves the scan result with json format associated with the reqID in the store.
-	SaveResult(reqID string, data *data.Item) error
-	// GetResult retrieves the scan result with JSON format associated with the specified reqID.
+	SaveResult(key *data.Key, data *data.Item) error
+	// GetResult retrieves the scan result with JSON format associated with
+	// the specified reqID
+	// the scanner provider name
+	// and teh data mimetype.
+	//
 	// If data is not found, then NOT_FOUND error should be returned.
 	// If data is not ready, then NOT_READY error should be returned (A next retry header can be added to HTTP response).
 	// If data is marked as error, then the related error should be returned.
-	GetResult(reqID string) (*data.Item, error)
+	GetResult(key *data.Key) (*data.Item, error)
 }
 
 var defaultProvider Provider
